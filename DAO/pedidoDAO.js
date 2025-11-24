@@ -13,15 +13,11 @@ export default class PedidoDAO {
             CREATE TABLE IF NOT EXISTS pedido (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 sessao VARCHAR(255) NOT NULL,
-                cliente_nome VARCHAR(150),
-                telefone VARCHAR(50),
-                endereco VARCHAR(255),
                 forma_pagamento VARCHAR(100),
                 status VARCHAR(50) DEFAULT 'novo',
                 total DECIMAL(10,2) DEFAULT 0,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            `;
+            );`;
 
             const sqlItens = `
             CREATE TABLE IF NOT EXISTS pedido_item (
@@ -30,11 +26,9 @@ export default class PedidoDAO {
                 pizza_codigo INT NOT NULL,
                 pizza_nome VARCHAR(150),
                 quantidade INT NOT NULL,
-                preco_unitario DECIMAL(10,2) NOT NULL,
                 subtotal DECIMAL(10,2) NOT NULL,
                 FOREIGN KEY (pedido_id) REFERENCES pedido(id) ON DELETE CASCADE
-            );
-            `;
+            );`;
 
             conexao = await conectar();
             await conexao.execute(sqlPedidos);
@@ -54,7 +48,6 @@ export default class PedidoDAO {
                 "SELECT * FROM pedido WHERE sessao = ? AND status = 'novo' LIMIT 1",
                 [sessao]
             );
-
             if (rows.length > 0) return rows[0];
 
             const [res] = await conexao.execute(
@@ -66,7 +59,6 @@ export default class PedidoDAO {
                 "SELECT * FROM pedido WHERE id = ?",
                 [res.insertId]
             );
-
             return novoRow[0];
         } finally {
             conexao.release();
@@ -82,12 +74,19 @@ export default class PedidoDAO {
 
             const pedido = await this.criarOuAtualizarPedidoTemp(sessao);
 
-            const precoUnitario = Number(pizza.preco);
-            const subtotal = precoUnitario * Number(quantidade);
+            const precoUnitario = Number(pizza.preco) || 0;
+            const qty = Number(quantidade) || 1;
+            const subtotal = precoUnitario * qty;
 
             await conexao.execute(
-                "INSERT INTO pedido_item (pedido_id, pizza_codigo, pizza_nome, quantidade, preco_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
-                [pedido.id, pizza.codigo, pizza.nome, quantidade, precoUnitario, subtotal]
+                "INSERT INTO pedido_item (pedido_id, pizza_codigo, pizza_nome, quantidade, subtotal) VALUES (?, ?, ?, ?, ?)",
+                [
+                    pedido.id,
+                    pizza.codigo,
+                    pizza.nome || null,
+                    qty,
+                    subtotal
+                ]
             );
 
             await conexao.execute(
@@ -103,7 +102,6 @@ export default class PedidoDAO {
                 "SELECT * FROM pedido_item WHERE pedido_id = ?",
                 [pedido.id]
             );
-
             pedidoRows[0].itens = itens;
             return pedidoRows[0];
         } finally {
@@ -117,10 +115,9 @@ export default class PedidoDAO {
             const updates = [];
             const params = [];
 
-            if (dados.cliente_nome !== undefined) { updates.push("cliente_nome = ?"); params.push(dados.cliente_nome); }
-            if (dados.endereco !== undefined) { updates.push("endereco = ?"); params.push(dados.endereco); }
-            if (dados.forma_pagamento !== undefined) { updates.push("forma_pagamento = ?"); params.push(dados.forma_pagamento); }
-            if (dados.status !== undefined) { updates.push("status = ?"); params.push(dados.status); }
+            if ('status' in dados) { updates.push("status = ?"); params.push(dados.status ?? null); }
+            if ('forma_pagamento' in dados) { updates.push("forma_pagamento = ?"); params.push(dados.forma_pagamento ?? null); }
+            if ('endereco' in dados) { updates.push("endereco = ?"); params.push(dados.endereco ?? null); }
 
             if (updates.length > 0) {
                 params.push(sessao);
@@ -163,7 +160,7 @@ export default class PedidoDAO {
             if (itens.length === 0) throw new Error("Nenhum item no pedido");
 
             let total = 0;
-            for (const it of itens) total += Number(it.subtotal);
+            for (const it of itens) total += Number(it.subtotal) || 0;
 
             await conexao.execute(
                 "UPDATE pedido SET status = 'finalizado', total = ? WHERE id = ?",
