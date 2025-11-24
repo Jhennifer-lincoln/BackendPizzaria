@@ -12,12 +12,13 @@ export default class PedidoDAO {
             const sqlPedidos = `
             CREATE TABLE IF NOT EXISTS pedido (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                session_id VARCHAR(255) NOT NULL,
-                cliente VARCHAR(255),
+                sessao VARCHAR(255) NOT NULL,
+                cliente_nome VARCHAR(150),
+                telefone VARCHAR(50),
                 endereco VARCHAR(255),
                 forma_pagamento VARCHAR(100),
-                status VARCHAR(50),
-                valor_total DECIMAL(10,2),
+                status VARCHAR(50) DEFAULT 'novo',
+                total DECIMAL(10,2) DEFAULT 0,
                 criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             `;
@@ -26,10 +27,11 @@ export default class PedidoDAO {
             CREATE TABLE IF NOT EXISTS pedido_item (
                 id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 pedido_id INT NOT NULL,
-                pizza_codigo INT,
-                nome VARCHAR(255),
-                quantidade INT,
-                preco DECIMAL(10,2),
+                pizza_codigo INT NOT NULL,
+                pizza_nome VARCHAR(150),
+                quantidade INT NOT NULL,
+                preco_unitario DECIMAL(10,2) NOT NULL,
+                subtotal DECIMAL(10,2) NOT NULL,
                 FOREIGN KEY (pedido_id) REFERENCES pedido(id) ON DELETE CASCADE
             );
             `;
@@ -45,52 +47,62 @@ export default class PedidoDAO {
         }
     }
 
-    async criarOuAtualizarPedidoTemp(sessionId) {
+    async criarOuAtualizarPedidoTemp(sessao) {
         const conexao = await conectar();
         try {
-            // tenta encontrar pedido em andamento para a sessão
-            const [rows] = await conexao.execute("SELECT * FROM pedido WHERE session_id = ? AND status = 'em_andamento' LIMIT 1", [sessionId]);
-            if (rows.length > 0) {
-                return rows[0];
-            } else {
-                const [res] = await conexao.execute("INSERT INTO pedido (session_id, status, valor_total) VALUES (?, 'em_andamento', 0.00)", [sessionId]);
-                const id = res.insertId;
-                const [novoRow] = await conexao.execute("SELECT * FROM pedido WHERE id = ?", [id]);
-                return novoRow[0];
-            }
+            const [rows] = await conexao.execute(
+                "SELECT * FROM pedido WHERE sessao = ? AND status = 'novo' LIMIT 1",
+                [sessao]
+            );
+
+            if (rows.length > 0) return rows[0];
+
+            const [res] = await conexao.execute(
+                "INSERT INTO pedido (sessao, status, total) VALUES (?, 'novo', 0)",
+                [sessao]
+            );
+
+            const [novoRow] = await conexao.execute(
+                "SELECT * FROM pedido WHERE id = ?",
+                [res.insertId]
+            );
+
+            return novoRow[0];
         } finally {
             conexao.release();
         }
     }
 
-    async adicionarItem(sessionId, pizzaCodigo, quantidade = 1) {
+    async adicionarItem(sessao, pizzaCodigo, quantidade = 1) {
         const conexao = await conectar();
         const pizzaDAO = new PizzaDAO();
         try {
-            // busca pizza por codigo
             const pizza = await pizzaDAO.buscarPorCodigo(pizzaCodigo);
             if (!pizza) throw new Error("Produto não encontrado");
 
-            // garante pedido temporário
-            const pedido = await this.criarOuAtualizarPedidoTemp(sessionId);
-            const preco = Number(pizza.preco);
-            const subtotal = preco * Number(quantidade);
+            const pedido = await this.criarOuAtualizarPedidoTemp(sessao);
 
-            // insere item
+            const precoUnitario = Number(pizza.preco);
+            const subtotal = precoUnitario * Number(quantidade);
+
             await conexao.execute(
-                "INSERT INTO pedido_item (pedido_id, pizza_codigo, nome, quantidade, preco) VALUES (?, ?, ?, ?, ?)",
-                [pedido.id, pizzaCodigo, pizza.nome, quantidade, subtotal]
+                "INSERT INTO pedido_item (pedido_id, pizza_codigo, pizza_nome, quantidade, preco_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)",
+                [pedido.id, pizza.codigo, pizza.nome, quantidade, precoUnitario, subtotal]
             );
 
-            // atualiza total
             await conexao.execute(
-                "UPDATE pedido SET valor_total = COALESCE(valor_total,0) + ? WHERE id = ?",
+                "UPDATE pedido SET total = COALESCE(total,0) + ? WHERE id = ?",
                 [subtotal, pedido.id]
             );
 
-            // retorna pedido com itens
-            const [pedidoRows] = await conexao.execute("SELECT * FROM pedido WHERE id = ?", [pedido.id]);
-            const [itens] = await conexao.execute("SELECT * FROM pedido_item WHERE pedido_id = ?", [pedido.id]);
+            const [pedidoRows] = await conexao.execute(
+                "SELECT * FROM pedido WHERE id = ?",
+                [pedido.id]
+            );
+            const [itens] = await conexao.execute(
+                "SELECT * FROM pedido_item WHERE pedido_id = ?",
+                [pedido.id]
+            );
 
             pedidoRows[0].itens = itens;
             return pedidoRows[0];
@@ -99,31 +111,33 @@ export default class PedidoDAO {
         }
     }
 
-    async atualizarDadosPedido(sessionId, dados = {}) {
+    async atualizarDadosPedido(sessao, dados = {}) {
         const conexao = await conectar();
         try {
             const updates = [];
             const params = [];
-            if (dados.cliente !== undefined) { updates.push("cliente = ?"); params.push(dados.cliente); }
+
+            if (dados.cliente_nome !== undefined) { updates.push("cliente_nome = ?"); params.push(dados.cliente_nome); }
             if (dados.endereco !== undefined) { updates.push("endereco = ?"); params.push(dados.endereco); }
             if (dados.forma_pagamento !== undefined) { updates.push("forma_pagamento = ?"); params.push(dados.forma_pagamento); }
             if (dados.status !== undefined) { updates.push("status = ?"); params.push(dados.status); }
 
-            if (updates.length === 0) {
-                // retorna pedido atual
-                const [rows] = await conexao.execute("SELECT * FROM pedido WHERE session_id = ? AND status IN ('em_andamento','finalizado') LIMIT 1", [sessionId]);
-                if (rows.length === 0) return null;
-                const [itens] = await conexao.execute("SELECT * FROM pedido_item WHERE pedido_id = ?", [rows[0].id]);
-                rows[0].itens = itens;
-                return rows[0];
+            if (updates.length > 0) {
+                params.push(sessao);
+                const sql = `UPDATE pedido SET ${updates.join(", ")} WHERE sessao = ? AND status = 'novo'`;
+                await conexao.execute(sql, params);
             }
 
-            params.push(sessionId);
-            const sql = `UPDATE pedido SET ${updates.join(", ")} WHERE session_id = ? AND status = 'em_andamento'`;
-            await conexao.execute(sql, params);
+            const [rows] = await conexao.execute(
+                "SELECT * FROM pedido WHERE sessao = ? LIMIT 1",
+                [sessao]
+            );
+            if (rows.length === 0) return null;
 
-            const [rows] = await conexao.execute("SELECT * FROM pedido WHERE session_id = ? LIMIT 1", [sessionId]);
-            const [itens] = await conexao.execute("SELECT * FROM pedido_item WHERE pedido_id = ?", [rows[0].id]);
+            const [itens] = await conexao.execute(
+                "SELECT * FROM pedido_item WHERE pedido_id = ?",
+                [rows[0].id]
+            );
             rows[0].itens = itens;
             return rows[0];
         } finally {
@@ -131,27 +145,39 @@ export default class PedidoDAO {
         }
     }
 
-    async finalizarPedido(sessionId) {
+    async finalizarPedido(sessao) {
         const conexao = await conectar();
         try {
-            const [rows] = await conexao.execute("SELECT * FROM pedido WHERE session_id = ? AND status = 'em_andamento' LIMIT 1", [sessionId]);
+            const [rows] = await conexao.execute(
+                "SELECT * FROM pedido WHERE sessao = ? AND status = 'novo' LIMIT 1",
+                [sessao]
+            );
             if (rows.length === 0) throw new Error("Pedido não encontrado");
 
             const pedido = rows[0];
 
-            // valida se tem itens
-            const [itens] = await conexao.execute("SELECT * FROM pedido_item WHERE pedido_id = ?", [pedido.id]);
+            const [itens] = await conexao.execute(
+                "SELECT * FROM pedido_item WHERE pedido_id = ?",
+                [pedido.id]
+            );
             if (itens.length === 0) throw new Error("Nenhum item no pedido");
 
-            // calcula total (já armazenado, mas recalcule por segurança)
             let total = 0;
-            for (const it of itens) total += Number(it.preco);
+            for (const it of itens) total += Number(it.subtotal);
 
-            await conexao.execute("UPDATE pedido SET status = 'finalizado', valor_total = ? WHERE id = ?", [total, pedido.id]);
+            await conexao.execute(
+                "UPDATE pedido SET status = 'finalizado', total = ? WHERE id = ?",
+                [total, pedido.id]
+            );
 
-            // retorna pedido finalizado
-            const [pedidoFinal] = await conexao.execute("SELECT * FROM pedido WHERE id = ?", [pedido.id]);
-            const [itensFinal] = await conexao.execute("SELECT * FROM pedido_item WHERE pedido_id = ?", [pedido.id]);
+            const [pedidoFinal] = await conexao.execute(
+                "SELECT * FROM pedido WHERE id = ?",
+                [pedido.id]
+            );
+            const [itensFinal] = await conexao.execute(
+                "SELECT * FROM pedido_item WHERE pedido_id = ?",
+                [pedido.id]
+            );
             pedidoFinal[0].itens = itensFinal;
             return pedidoFinal[0];
         } finally {
@@ -159,12 +185,19 @@ export default class PedidoDAO {
         }
     }
 
-    async buscarPedidoPorSession(sessionId) {
+    async buscarPedidoPorSession(sessao) {
         const conexao = await conectar();
         try {
-            const [rows] = await conexao.execute("SELECT * FROM pedido WHERE session_id = ? LIMIT 1", [sessionId]);
+            const [rows] = await conexao.execute(
+                "SELECT * FROM pedido WHERE sessao = ? LIMIT 1",
+                [sessao]
+            );
             if (rows.length === 0) return null;
-            const [itens] = await conexao.execute("SELECT * FROM pedido_item WHERE pedido_id = ?", [rows[0].id]);
+
+            const [itens] = await conexao.execute(
+                "SELECT * FROM pedido_item WHERE pedido_id = ?",
+                [rows[0].id]
+            );
             rows[0].itens = itens;
             return rows[0];
         } finally {

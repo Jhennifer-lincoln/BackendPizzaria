@@ -2,7 +2,6 @@ import Pizza from "../Models/pizza.js";
 
 export default class Pedido {
     #id
-    #sessionId
     #cliente
     #endereco
     #formaPagamento
@@ -10,22 +9,18 @@ export default class Pedido {
     #itens 
     #valorTotal
 
-    constructor(id, sessionId, cliente, endereco, formaPagamento, status, itens, valorTotal) {
+    constructor(id, cliente, endereco, formaPagamento, status, itens, valorTotal) {
         this.#id = id;
-        this.#sessionId = sessionId;
-        this.#cliente = cliente;
+        this.#cliente = cliente; // corresponde a cliente_nome no banco
         this.#endereco = endereco;
         this.#formaPagamento = formaPagamento;
         this.#status = status;
         this.#itens = itens;
-        this.#valorTotal = valorTotal;
+        this.#valorTotal = valorTotal; // corresponde a total no banco
     }
 
     get id() { return this.#id; }
     set id(v) { this.#id = v; }
-
-    get sessionId() { return this.#sessionId; }
-    set sessionId(v) { this.#sessionId = v; }
 
     get cliente() { return this.#cliente; }
     set cliente(v) { this.#cliente = v; }
@@ -48,7 +43,6 @@ export default class Pedido {
     toJSON() {
         return {
             id: this.#id,
-            sessionId: this.#sessionId,
             cliente: this.#cliente,
             endereco: this.#endereco,
             formaPagamento: this.#formaPagamento,
