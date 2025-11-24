@@ -82,6 +82,33 @@ export default class DialogFlowCtrl {
                 });
             }
 
+            else if (nomeIntencao === "PedirMais") {
+                const respostaSim = dados.queryResult.parameters.confirmacao === "sim" || nomeIntencao.endsWith("Sim");
+                if (respostaSim) {
+                    return resposta.status(200).json({
+                        fulfillmentMessages: [{ text: { text: ["Perfeito! Qual outro sabor deseja adicionar?"] } }]
+                    });
+                } else {
+                    return resposta.status(200).json({
+                        fulfillmentMessages: [{ text: { text: ["Ok! Por favor, informe o endereço para entrega."] } }]
+                    });
+                }
+            }
+
+            else if (nomeIntencao === "Endereco") {
+                const endereco = dados.queryResult.parameters.endereco || dados.queryResult.parameters["endereco.original"];
+                if (!endereco) {
+                    return resposta.status(200).json({
+                        fulfillmentMessages: [{ text: { text: ["Não consegui entender o endereço. Pode repetir, por favor?"] } }]
+                    });
+                }
+
+                await this.pedidoDAO.atualizarDadosPedido(sessionId, { endereco });
+                return resposta.status(200).json({
+                    fulfillmentMessages: [{ text: { text: ["Endereço recebido! Qual a forma de pagamento? (Ex: Dinheiro, Cartão)"] } }]
+                });
+            }
+
             else if (nomeIntencao === "Forma_pagamento") {
                 const forma = dados.queryResult.parameters.tipo_pagamento || dados.queryResult.parameters.forma;
                 if (!forma) {
