@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Pizzaria Lincoln — Chat</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; background: #fff7f0; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
+    .container { width: 360px; max-width:95%; background:white; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,0.12); padding:16px; }
+    header { text-align:center; margin-bottom:8px; }
+    h1 { font-size:18px; margin:0; }
+    .desc { font-size:13px; color:#666; margin-top:4px }
+    /* area para o iframe do Dialogflow Messenger */
+    .chat { margin-top:12px; height:520px; border-radius:8px; overflow:hidden; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🍕 Pizzaria Lincoln</h1>
+      <div class="desc">Peça sua pizza usando nosso chatbot integrado.</div>
+    </header>
+
+    <div class="chat">
+      <!-- Dialogflow Messenger: substitua os atributos abaixo pelo seu Project ID -->
+      <iframe
+        allow="microphone;"
+        width="100%"
+        height="100%"
+        src="https://console.dialogflow.com/api-client/demo/embedded/assistente-ti-vhgf">
+      </iframe>
+    </div>
+  </div>
+</body>
+</html>
