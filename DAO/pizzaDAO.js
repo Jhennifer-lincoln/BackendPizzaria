@@ -50,20 +50,17 @@ export default class PizzaDAO {
         return listaPizzas;
     }
 
-        async buscarPorNome(nome) {
-        const sql = `SELECT * FROM pizza WHERE nome LIKE ? LIMIT 1`;
+    async buscarPorNome(nome) {
         const conexao = await conectar();
         try {
-            const [rows] = await conexao.execute(sql, [`%${nome}%`]);
+            // busca aproximada, case-insensitive
+            const [rows] = await conexao.execute(
+                "SELECT * FROM pizza WHERE LOWER(nome) = LOWER(?) LIMIT 1",
+                [nome]
+            );
+
             if (rows.length === 0) return null;
-            const r = rows[0];
-            return {
-                codigo: r.codigo,
-                nome: r.nome,
-                descricao: r.descricao,
-                preco: r.preco,
-                imagem: r.imagem
-            };
+            return rows[0];
         } finally {
             conexao.release();
         }
